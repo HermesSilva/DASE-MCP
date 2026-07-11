@@ -22037,7 +22037,7 @@ function RegisterCommandTools(pServer, pHost) {
 
 // src/server/index.ts
 var SERVER_NAME = "dase";
-var SERVER_VERSION = "2.0.666";
+var SERVER_VERSION = "2.0.667";
 function MakeLog() {
   const write = (pLevel, pMessage, pError) => {
     const suffix = pError !== void 0 ? ` :: ${pError instanceof Error ? pError.message : String(pError)}` : "";

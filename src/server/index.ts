@@ -26,7 +26,7 @@ import { RegisterReadTools } from "./XDaseMcpTools";
 import { RegisterWriteTools, RegisterCommandTools } from "./XDaseMcpWriteTools";
 
 const SERVER_NAME = "dase";
-const SERVER_VERSION = "2.0.666";
+const SERVER_VERSION = "2.0.667";
 
 /** stderr logger — stdout carries the MCP protocol and must stay clean. */
 function MakeLog(): IDaseMcpLog {

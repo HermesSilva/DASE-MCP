@@ -1,6 +1,6 @@
 {
     "name": "@tootega/dase-mcp",
-    "version": "2.0.666",
+    "version": "2.0.667",
     "description": "Standalone MCP server for the DASE ORM Designer - connects to the loopback agent bridge exposed by the DASE VS Code extension and translates MCP tool calls into bridge calls. Publishable as a Claude Code plugin.",
     "author": "Hermes Silva <hxpelo@gmail.com>",
     "license": "MIT",
