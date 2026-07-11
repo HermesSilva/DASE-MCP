@@ -17,8 +17,8 @@
   (Get-Content/Set-Content do PS 5.1 corrompem UTF-8 sem BOM e inserem BOM).
 
 .EXAMPLE
-  ./scripts/prepare-release.ps1                   # incrementa o build: X.Y.<build+1>
-  ./scripts/prepare-release.ps1 -Version 1.1.700  # define a versão exata (sem incremento)
+  ./prepare-release.ps1                   # incrementa o build: X.Y.<build+1>
+  ./prepare-release.ps1 -Version 1.1.700  # define a versão exata (sem incremento)
 
 .NOTES
   Esquema de versão: Major.Minor.Build. O build começa em 666 (primeira release)
@@ -29,7 +29,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $PSScriptRoot
+# Script vive na RAIZ do repo.
+$root = $PSScriptRoot
 Set-Location $root
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
