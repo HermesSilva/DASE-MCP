@@ -1,7 +1,16 @@
 # DASE — MCP Integration (Study / Design)
 
-> **Status:** Architecture study. Defines how to expose DASE via the **Model Context Protocol (MCP)**
-> so that **any** external AI (Cursor, Cline, Claude Desktop, or any generic MCP client)
+> **Status: SUPERSEDED (v2, 2026-07-11).** The embedded-server architecture described below
+> was inverted. Since v2.0.0 the MCP server runs **entirely outside VS Code** (this package,
+> stdio); the DASE extension carries no MCP code and only exposes a loopback **agent bridge**
+> (plain JSON over HTTP — `POST /bridge` with `{ method, args }` → `{ ok, result | error }`,
+> protocol `dase-bridge/1`). Discovery files are `bridge-endpoint*.json`; the DASE settings are
+> `dase.agentBridge.enabled` (default **true**) and `dase.agentBridge.port` (default `0`,
+> ephemeral). See the README for the current architecture. The tool surface (§5) and the
+> security posture (loopback bind + Origin allowlist, now enforced by the bridge) remain valid.
+
+> **Original study (historical):** defines how to expose DASE via the **Model Context Protocol
+> (MCP)** so that **any** external AI (Cursor, Cline, Claude Desktop, or any generic MCP client)
 > can manipulate ORM Designer objects and tools inside VS Code.
 
 ---

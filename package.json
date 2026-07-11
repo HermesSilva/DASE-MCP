@@ -1,11 +1,11 @@
 {
     "name": "@tootega/dase-mcp",
-    "version": "1.0.666",
-    "description": "MCP server for the DASE ORM Designer - embedded server library (consumed by the DASE VS Code extension) plus a standalone stdio proxy publishable as a Claude Code plugin.",
+    "version": "2.0.666",
+    "description": "Standalone MCP server for the DASE ORM Designer - connects to the loopback agent bridge exposed by the DASE VS Code extension and translates MCP tool calls into bridge calls. Publishable as a Claude Code plugin.",
     "author": "Hermes Silva <hxpelo@gmail.com>",
     "license": "MIT",
-    "main": "dist/embedded/index.js",
-    "types": "dist/embedded/index.d.ts",
+    "main": "dist/server/index.js",
+    "types": "dist/server/index.d.ts",
     "bin": {
         "dase-mcp": "claude-plugin/server/dase-mcp.cjs"
     },
@@ -16,7 +16,7 @@
     ],
     "scripts": {
         "build": "tsc -p tsconfig.json && npm run bundle",
-        "bundle": "esbuild src/proxy/index.ts --bundle --platform=node --format=cjs --outfile=claude-plugin/server/dase-mcp.cjs",
+        "bundle": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --outfile=claude-plugin/server/dase-mcp.cjs",
         "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {

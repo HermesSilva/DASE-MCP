@@ -4,11 +4,10 @@
   smoke test do proxy stdio e artefatos em release/ (tarball npm + zip do plugin).
 
 .DESCRIPTION
-  Sincroniza a versão em package.json, claude-plugin/.claude-plugin/plugin.json,
-  src/proxy/index.ts (PROXY_VERSION) e src/embedded/XDaseMcpServer.ts
-  (SERVER_VERSION), recompila, valida os manifests JSON, faz um handshake MCP
-  real contra o bundle e empacota:
-    release/tootega-dase-mcp-<versão>.tgz   (npm pack — biblioteca embutida)
+  Sincroniza a versão em package.json, claude-plugin/.claude-plugin/plugin.json
+  e src/server/index.ts (SERVER_VERSION), recompila, valida os manifests JSON,
+  faz um handshake MCP real contra o bundle e empacota:
+    release/tootega-dase-mcp-<versão>.tgz   (npm pack — servidor standalone)
     release/dase-mcp-plugin-<versão>.zip    (claude-plugin/ — plugin Claude Code)
 
   O bundle claude-plugin/server/dase-mcp.cjs é artefato COMMITADO: instalação de
@@ -64,11 +63,8 @@ Write-Utf8 "package.json" ([regex]::new($reVersion).Replace($pkgJson, "`$1`"$Ver
 $pluginPath = "claude-plugin/.claude-plugin/plugin.json"
 Write-Utf8 $pluginPath ([regex]::new($reVersion).Replace((Read-Utf8 $pluginPath), "`$1`"$Version`"", 1))
 
-# Constantes de versão no código-fonte (proxy e servidor embutido).
-$proxySrc = "src/proxy/index.ts"
-Write-Utf8 $proxySrc ((Read-Utf8 $proxySrc) -replace 'const PROXY_VERSION = "[^"]*";', "const PROXY_VERSION = `"$Version`";")
-
-$serverSrc = "src/embedded/XDaseMcpServer.ts"
+# Constante de versão no código-fonte (servidor standalone).
+$serverSrc = "src/server/index.ts"
 Write-Utf8 $serverSrc ((Read-Utf8 $serverSrc) -replace 'const SERVER_VERSION = "[^"]*";', "const SERVER_VERSION = `"$Version`";")
 
 # ── 2. Build ─────────────────────────────────────────────────────────────────

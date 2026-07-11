@@ -5,8 +5,8 @@ Connect Claude Code to a **live DASE ORM Designer** session running in VS Code. 
 ## Requirements
 
 - Windows / macOS / Linux with **Node.js ≥ 18** on the PATH
-- VS Code with the **DASE** extension installed
-- DASE setting `"dase.mcp.enabled": true`
+- VS Code with the **DASE** extension installed (≥ 1.0.41883)
+- DASE setting `"dase.agentBridge.enabled": true` (the default)
 
 ## Install
 
@@ -19,9 +19,9 @@ Connect Claude Code to a **live DASE ORM Designer** session running in VS Code. 
 1. Open VS Code on your project and open a `.dsorm` model (or let the tools create one with `dase_new_document`).
 2. In Claude Code, just ask: *"list the tables of the model"*, *"add an Orders table with a FK to Customer"*, *"organize the tables by domain"*.
 
-If the designer is not running, the plugin exposes a single `dase_status` tool that explains how to bring it online. The proxy automatically finds the VS Code window whose workspace matches your Claude Code working directory (multi-window safe) and reconnects after VS Code restarts.
+If the designer is not running, tool calls fail with instructions and the `dase_status` tool reports connectivity. The server automatically finds the VS Code window whose workspace matches your Claude Code working directory (multi-window safe) and reconnects after VS Code restarts. The MCP server runs entirely in this plugin — the DASE extension only exposes a loopback agent bridge.
 
-Environment overrides: `DASE_MCP_URL` (fixed endpoint, skips discovery), `DASE_MCP_DISCOVERY_DIR` (extra discovery directory).
+Environment overrides: `DASE_BRIDGE_URL` (fixed bridge endpoint, skips discovery), `DASE_MCP_DISCOVERY_DIR` (extra discovery directory).
 
 ## Highlighted tools
 

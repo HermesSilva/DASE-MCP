@@ -2,8 +2,11 @@
 
 > **Audience:** developers integrating an external AI / MCP client (Cursor, Cline, Claude
 > Desktop, custom) with the DASE ORM Designer.
-> **Server:** `dase` v1.0.0 — embedded in the DASE VS Code extension.
-> **Protocol:** Model Context Protocol over **Streamable HTTP**.
+> **Server:** `dase` v2 — the STANDALONE `@tootega/dase-mcp` process (stdio). The DASE
+> extension hosts no MCP code; the server reaches it through the loopback **agent bridge**
+> (`POST /bridge`, protocol `dase-bridge/1`).
+> **Protocol:** Model Context Protocol over **stdio** (client ↔ this server); plain JSON over
+> HTTP (this server ↔ DASE bridge).
 
 ---
 
@@ -86,89 +89,92 @@
 
 ## 1. Connection
 
-### 1.1 Enabling the server
+### 1.1 Architecture (v2)
 
-The server is **off by default**. In VS Code settings:
+```
+MCP client ──stdio──> dase-mcp server ──HTTP (dase-bridge/1)──> DASE agent bridge (VS Code)
+```
+
+The MCP server is this package's bundle (`claude-plugin/server/dase-mcp.cjs`, also
+`npx @tootega/dase-mcp`). It registers the whole DASE tool set and forwards each call to the
+agent bridge exposed by the DASE extension.
+
+DASE-side settings (VS Code):
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `dase.mcp.enabled` | `false` | Enable/disable the embedded MCP server |
-| `dase.mcp.port` | `39100` | Loopback TCP port |
-| `dase.mcp.autoApprove` | `[]` | Reserved for future write-approval allowlist |
+| `dase.agentBridge.enabled` | `true` | Enable/disable the loopback agent bridge (DASE's only agent entry point) |
+| `dase.agentBridge.port` | `0` | Loopback TCP port; `0` = OS-assigned ephemeral (multi-window safe) |
 
-When enabled, the endpoint is:
-
-```
-http://127.0.0.1:<port>/mcp
-```
-
-Bound to `127.0.0.1` only — not reachable off-host.
+The bridge binds to `127.0.0.1` only — not reachable off-host.
 
 ### 1.2 Authentication
 
-No authentication is required. The server is protected by the loopback-only bind
+No authentication is required. The bridge is protected by the loopback-only bind
 (§1.1) and the Origin policy (§1.4).
 
-### 1.3 Discovery file
+### 1.3 Discovery files
 
-On start the server writes the URL to the extension's **global storage**:
+On start the bridge writes discovery files into the extension's **global storage**:
 
 ```
-<globalStorage>/mcp-endpoint.json
+<globalStorage>/bridge-endpoint.json              (shared, last writer wins)
+<globalStorage>/bridge-endpoint.<hash>.json       (per window)
 ```
 
 ```json
 {
-  "url": "http://127.0.0.1:39100/mcp"
+  "url": "http://127.0.0.1:<port>/bridge",
+  "protocol": "dase-bridge/1",
+  "workspacePath": "D:\\Work\\MyProject",
+  "pid": 12345
 }
 ```
 
 `<globalStorage>` resolves to (typical):
 
-- Windows: `%APPDATA%\Code\User\globalStorage\tootega.dase\mcp-endpoint.json`
-- macOS: `~/Library/Application Support/Code/User/globalStorage/tootega.dase/mcp-endpoint.json`
-- Linux: `~/.config/Code/User/globalStorage/tootega.dase/mcp-endpoint.json`
+- Windows: `%APPDATA%\Code\User\globalStorage\hermessilva.dase\`
+- macOS: `~/Library/Application Support/Code/User/globalStorage/hermessilva.dase/`
+- Linux: `~/.config/Code/User/globalStorage/hermessilva.dase/`
 
-The file is deleted when the server is disabled.
+The MCP server scans VS Code / Insiders / VSCodium / Cursor / Windsurf storage dirs, prefers
+the live window whose `workspacePath` matches its cwd, prunes dead pids, and re-discovers +
+retries once when a call fails. Overrides: `DASE_BRIDGE_URL` (skip discovery),
+`DASE_MCP_DISCOVERY_DIR` (extra directory). The per-window file is deleted when the bridge is
+disabled or the window closes.
 
 ### 1.4 Origin policy
 
-Requests with an `Origin` header are accepted only when the origin host is
+Bridge requests with an `Origin` header are accepted only when the origin host is
 `127.0.0.1`, `localhost`, or `[::1]` (DNS-rebind defense). Native clients (no `Origin`)
 are always accepted.
 
-### 1.5 Sessions (Streamable HTTP)
+### 1.5 Bridge protocol (dase-bridge/1)
 
-Standard MCP Streamable HTTP lifecycle:
+Not MCP — a minimal JSON-over-HTTP RPC used between this server and DASE:
 
-1. `POST /mcp` with an `initialize` request → server replies and assigns a session via
-   the `mcp-session-id` response header.
-2. Subsequent `POST /mcp` calls MUST echo `mcp-session-id`.
-3. `GET /mcp` (with `mcp-session-id`) opens the SSE stream for server→client messages.
-4. `DELETE /mcp` (with `mcp-session-id`) terminates the session.
-
-Responses are delivered as `text/event-stream` (SSE) `event: message` frames. Set:
-
-```
-Accept: application/json, text/event-stream
-Content-Type: application/json
-```
+- `GET /bridge` → `{ "ok": true, "result": { "name": "dase", "protocol": "dase-bridge/1", "methods": [...], "commands": [...] } }`
+- `POST /bridge` with `{ "method": "ListTables", "args": ["filter"] }` →
+  `{ "ok": true, "result": "..." }` or `{ "ok": false, "error": "..." }`
+- Omitted optional args may be sent as `null`; the bridge normalizes them to `undefined`.
+- `ExecuteCommand` is restricted to a whitelist of `Dase.*` commands.
 
 ### 1.6 Client config examples
 
-**Generic / Cline (`mcp.json`):**
+**Claude Code:** `/plugin marketplace add HermesSilva/DASE-MCP` + `/plugin install dase-mcp`.
+
+**Generic / Cline / Cursor (`mcp.json`)** — stdio server:
 
 ```json
 {
   "mcpServers": {
     "dase": {
-      "url": "http://127.0.0.1:39100/mcp"
+      "command": "node",
+      "args": ["<path>/claude-plugin/server/dase-mcp.cjs"]
     }
   }
 }
 ```
-
-**Cursor (`.cursor/mcp.json`):** same shape (`url`).
 
 ---
 
@@ -599,28 +605,24 @@ All take **no params** and respond `Command "<title>" triggered.` (or a failure 
 
 ## 6. End-to-end examples
 
-### 6.1 Full handshake (curl)
+### 6.1 Handshake (stdio)
+
+Standard MCP stdio lifecycle against the bundled server (one JSON-RPC message per line):
 
 ```bash
-# 1) initialize — capture mcp-session-id from response headers
-curl -i -X POST http://127.0.0.1:39100/mcp \
+node claude-plugin/server/dase-mcp.cjs
+# stdin →  {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"demo","version":"1"}}}
+# stdin →  {"jsonrpc":"2.0","method":"notifications/initialized"}
+# stdin →  {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+```
+
+To poke the DASE bridge directly (no MCP), use the URL from the discovery file:
+
+```bash
+curl http://127.0.0.1:<port>/bridge            # capabilities
+curl -X POST http://127.0.0.1:<port>/bridge \
   -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize",
-       "params":{"protocolVersion":"2025-06-18","capabilities":{},
-                 "clientInfo":{"name":"demo","version":"1"}}}'
-
-# 2) notifications/initialized  (echo mcp-session-id)
-curl -X POST http://127.0.0.1:39100/mcp \
-  -H "mcp-session-id: $SID" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# 3) list tools
-curl -X POST http://127.0.0.1:39100/mcp \
-  -H "mcp-session-id: $SID" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  -d '{"method":"ListTables","args":[]}'
 ```
 
 ### 6.2 Call a tool (`tools/call`)
@@ -637,13 +639,12 @@ curl -X POST http://127.0.0.1:39100/mcp \
 }
 ```
 
-Response (SSE frame):
+Response:
 
-```
-event: message
-data: {"result":{"content":[{"type":"text",
-       "text":"Field \"Email\" (String) added to table \"Customer\" successfully."}]},
-       "jsonrpc":"2.0","id":3}
+```json
+{"result":{"content":[{"type":"text",
+ "text":"Field \"Email\" (String) added to table \"Customer\" successfully."}]},
+ "jsonrpc":"2.0","id":3}
 ```
 
 ### 6.3 Build a small model (tool sequence)
@@ -699,14 +700,19 @@ The external AI does the reasoning; DASE only supplies data and applies the resu
 | Operation failed | `Failed to <op> …: <message>.` |
 | No seed support | `Table "X" has no seed data support.` |
 
-Transport-level errors use JSON-RPC error objects:
+Bridge-level errors (`{ "ok": false, "error": ... }`) surface to the MCP client as tool
+errors. Bridge HTTP statuses:
 
-| HTTP | JSON-RPC code | Meaning |
-|------|---------------|---------|
-| 403 | -32000 | Origin not allowed |
-| 400 | -32000 | Unknown/missing session ID |
-| 404 | -32601 | Path not `/mcp` |
-| 500 | -32603 | Internal error |
+| HTTP | Meaning |
+|------|---------|
+| 403 | Origin not allowed |
+| 400 | Invalid JSON / missing or unknown `method` |
+| 404 | Path not `/bridge` |
+| 405 | HTTP verb other than GET/POST |
+| 500 | Internal error |
+
+When no live DASE bridge is found, tool calls fail with discovery instructions; use
+`dase_status` to check connectivity.
 
 ---
 
@@ -722,4 +728,4 @@ Transport-level errors use JSON-RPC error objects:
 
 ---
 
-*DASE — Design-Aided Software Engineering · MCP API Spec · server `dase` v1.0.0*
+*DASE — Design-Aided Software Engineering · MCP API Spec · server `dase` v2 (standalone)*

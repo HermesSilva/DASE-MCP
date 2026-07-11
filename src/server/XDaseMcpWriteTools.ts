@@ -1,13 +1,15 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { IAddShadowTablePayload, IDaseAgentBridge, IDaseMcpHost } from "./Contracts";
+import type { IAddShadowTablePayload, IDaseMcpHost } from "./Contracts";
+import { MakeRegDoc, type RegisterTool } from "./XDaseMcpTools";
 
 /**
  * XDaseMcpWriteTools — Mutation and command-trigger MCP tools for DASE.
  *
- * Every mutation tool delegates to the host's agent bridge, which mutates the active
- * designer, refreshes the webview, and persists the document. Destructive tools
- * carry the `destructiveHint` annotation so MCP clients can warn before invoking.
+ * Every mutation tool delegates to the agent bridge client, which forwards the call
+ * to the live designer inside VS Code (mutates the model, refreshes the webview,
+ * persists the document). Destructive tools carry the `destructiveHint` annotation
+ * so MCP clients can warn before invoking.
  */
 
 function Text(pText: string) {
@@ -15,56 +17,6 @@ function Text(pText: string) {
 }
 
 type ToolResult = { content: { type: "text"; text: string }[] };
-
-interface IToolConfig {
-    title: string;
-    description: string;
-    inputSchema: Record<string, unknown>;
-    annotations?: {
-        readOnlyHint?: boolean;
-        destructiveHint?: boolean;
-        idempotentHint?: boolean;
-        openWorldHint?: boolean;
-    };
-}
-
-/**
- * Narrowed `registerTool` signature — avoids "TS2589: Type instantiation is
- * excessively deep" from the SDK's Zod generics under `moduleResolution: node`.
- */
-type RegisterTool = (
-    name: string,
-    config: IToolConfig,
-    cb: (args: Record<string, unknown>) => Promise<ToolResult>
-) => void;
-
-/**
- * Wrap a registrar so every registered tool also accepts an optional `document`
- * argument, resolving (and opening) the target document before the handler runs.
- * Mirrors the helper in XDaseMcpTools so write tools share the same addressing.
- */
-function MakeRegDoc(pReg: RegisterTool, pBridge: IDaseAgentBridge): RegisterTool {
-    const docParam = z.string().optional().describe(
-        "Target .dsorm document by file name, relative path, or URI. If omitted, the active designer is used. Opened automatically if it is not already open."
-    );
-    return (pName, pConfig, pCb) => {
-        pReg(
-            pName,
-            { ...pConfig, inputSchema: { ...pConfig.inputSchema, document: docParam } },
-            async (pArgs) => {
-                const pre = await pBridge.SetTargetDocument(pArgs.document as string | undefined);
-                if (pre.error)
-                    return { content: [{ type: "text" as const, text: pre.error }] };
-                try {
-                    return await pCb(pArgs);
-                }
-                finally {
-                    pBridge.ClearTarget();
-                }
-            }
-        );
-    };
-}
 
 /** Register all write/mutation DASE tools on the given MCP server. */
 export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): void {
@@ -84,7 +36,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 y: z.number().optional().describe("Canvas Y (default 100).")
             }
         },
-        async (pArgs) => Text(bridge.AddTable(
+        async (pArgs) => Text(await bridge.AddTable(
             pArgs.name as string,
             pArgs.x as number | undefined,
             pArgs.y as number | undefined
@@ -103,7 +55,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 newName: z.string().describe("New table name.")
             }
         },
-        async (pArgs) => Text(bridge.RenameTable(
+        async (pArgs) => Text(await bridge.RenameTable(
             pArgs.tableName as string | undefined,
             pArgs.newName as string,
             pArgs.tableId as string | undefined,
@@ -123,7 +75,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { destructiveHint: true }
         },
-        async (pArgs) => Text(bridge.DeleteTable(
+        async (pArgs) => Text(await bridge.DeleteTable(
             pArgs.tableName as string | undefined,
             pArgs.tableId as string | undefined,
             pArgs.isShadow as boolean | undefined
@@ -144,7 +96,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { idempotentHint: true }
         },
-        async (pArgs) => Text(bridge.MoveTable(
+        async (pArgs) => Text(await bridge.MoveTable(
             pArgs.tableName as string | undefined,
             pArgs.x as number,
             pArgs.y as number,
@@ -166,7 +118,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { idempotentHint: true }
         },
-        async (pArgs) => Text(bridge.SetTableColor(
+        async (pArgs) => Text(await bridge.SetTableColor(
             pArgs.tableName as string | undefined,
             pArgs.color as string,
             pArgs.tableId as string | undefined,
@@ -188,7 +140,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 dataType: z.string().describe("Data type, e.g. String, Int32, Guid, DateTime.")
             }
         },
-        async (pArgs) => Text(bridge.AddField(
+        async (pArgs) => Text(await bridge.AddField(
             pArgs.tableName as string | undefined,
             pArgs.fieldName as string,
             pArgs.dataType as string,
@@ -211,7 +163,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 newName: z.string().describe("New field name.")
             }
         },
-        async (pArgs) => Text(bridge.RenameField(
+        async (pArgs) => Text(await bridge.RenameField(
             pArgs.tableName as string | undefined,
             pArgs.fieldName as string | undefined,
             pArgs.newName as string,
@@ -235,7 +187,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { destructiveHint: true }
         },
-        async (pArgs) => Text(bridge.DeleteField(
+        async (pArgs) => Text(await bridge.DeleteField(
             pArgs.tableName as string | undefined,
             pArgs.fieldName as string | undefined,
             pArgs.tableId as string | undefined,
@@ -258,7 +210,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 newIndex: z.number().describe("New zero-based index.")
             }
         },
-        async (pArgs) => Text(bridge.ReorderField(
+        async (pArgs) => Text(await bridge.ReorderField(
             pArgs.tableName as string | undefined,
             pArgs.fieldName as string | undefined,
             pArgs.newIndex as number,
@@ -285,7 +237,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 oneToOne: z.boolean().optional().describe("1:1 PK→PK link (inheritance). Source table must have a PK field; no FK field is created.")
             }
         },
-        async (pArgs) => Text(bridge.AddReference(
+        async (pArgs) => Text(await bridge.AddReference(
             pArgs.sourceTable as string | undefined,
             pArgs.targetTable as string | undefined,
             pArgs.name as string | undefined,
@@ -310,7 +262,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 targetIsShadow: z.boolean().optional().describe("Disambiguate a duplicated target name.")
             }
         },
-        async (pArgs) => Text(bridge.MoveReferenceTarget(
+        async (pArgs) => Text(await bridge.MoveReferenceTarget(
             pArgs.referenceName as string | undefined,
             pArgs.referenceId as string | undefined,
             pArgs.targetTable as string | undefined,
@@ -330,7 +282,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { destructiveHint: true }
         },
-        async (pArgs) => Text(bridge.DeleteReference(
+        async (pArgs) => Text(await bridge.DeleteReference(
             pArgs.name as string | undefined,
             pArgs.referenceId as string | undefined
         ))
@@ -348,7 +300,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 value: z.any().describe("New value.")
             }
         },
-        async (pArgs) => Text(bridge.UpdateProperty(
+        async (pArgs) => Text(await bridge.UpdateProperty(
             pArgs.elementId as string,
             pArgs.propertyKey as string,
             pArgs.value
@@ -364,7 +316,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             inputSchema: { elementId: z.string().describe("Element ID to delete.") },
             annotations: { destructiveHint: true }
         },
-        async (pArgs) => Text(bridge.DeleteElementById(pArgs.elementId as string))
+        async (pArgs) => Text(await bridge.DeleteElementById(pArgs.elementId as string))
     );
 
     regDoc(
@@ -377,7 +329,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 newName: z.string().describe("New name.")
             }
         },
-        async (pArgs) => Text(bridge.RenameElementById(pArgs.elementId as string, pArgs.newName as string))
+        async (pArgs) => Text(await bridge.RenameElementById(pArgs.elementId as string, pArgs.newName as string))
     );
 
     // ── Layout ──────────────────────────────────────────────────────────────
@@ -389,7 +341,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             inputSchema: {},
             annotations: { idempotentHint: true }
         },
-        async () => Text(bridge.AlignLines())
+        async () => Text(await bridge.AlignLines())
     );
 
     // ── Seed data ───────────────────────────────────────────────────────────
@@ -407,7 +359,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             },
             annotations: { destructiveHint: true }
         },
-        async (pArgs) => Text(bridge.SaveSeed(
+        async (pArgs) => Text(await bridge.SaveSeed(
             pArgs.tableName as string | undefined,
             pArgs.rows as Array<Record<string, string>>,
             pArgs.tableId as string | undefined,
@@ -445,7 +397,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 TableID: pArgs.tableId as string,
                 TableName: pArgs.tableName as string
             };
-            return Text(bridge.AddShadowTable(payload));
+            return Text(await bridge.AddShadowTable(payload));
         }
     );
 
@@ -502,7 +454,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
                 color: string;
                 tables: Array<{ id: string; x: number; y: number }>;
             }>) ?? [];
-            return Text(bridge.ApplyOrganization({ groups }));
+            return Text(await bridge.ApplyOrganization({ groups }));
         }
     );
 
@@ -514,7 +466,7 @@ export function RegisterWriteTools(pServer: McpServer, pHost: IDaseMcpHost): voi
             inputSchema: {},
             annotations: { idempotentHint: true }
         },
-        async () => Text(bridge.RevertOrganizationText())
+        async () => Text(await bridge.RevertOrganizationText())
     );
 }
 

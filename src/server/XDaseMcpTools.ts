@@ -5,9 +5,9 @@ import type { IDaseAgentBridge, IDaseMcpHost } from "./Contracts";
 /**
  * XDaseMcpTools — Registers DASE read-only tools on an MCP server instance.
  *
- * Each tool is a thin wrapper over the host's agent bridge ({@link IDaseAgentBridge}),
- * the same adapter used by the VS Code Language Model Tools. This guarantees identical
- * behavior whether the model arrives via Copilot Agent Mode or via an external MCP client.
+ * Each tool is a thin wrapper over the agent bridge client ({@link IDaseAgentBridge}),
+ * which forwards the call over HTTP to the bridge endpoint inside the DASE VS Code
+ * extension. Behavior is identical to DASE's own Language Model Tools.
  */
 
 function Text(pText: string) {
@@ -36,7 +36,7 @@ type ToolResult = { content: { type: "text"; text: string }[] };
  * is excessively deep". We bind a narrowed signature to stop that inference while
  * keeping the call sites readable.
  */
-type RegisterTool = (
+export type RegisterTool = (
     name: string,
     config: IToolConfig,
     cb: (args: Record<string, unknown>) => Promise<ToolResult>
@@ -47,7 +47,7 @@ type RegisterTool = (
  * argument. Before the handler runs, the target document is resolved (and opened
  * if needed) via {@link IDaseAgentBridge.SetTargetDocument}; it is cleared afterwards.
  */
-function MakeRegDoc(pReg: RegisterTool, pBridge: IDaseAgentBridge): RegisterTool {
+export function MakeRegDoc(pReg: RegisterTool, pBridge: IDaseAgentBridge): RegisterTool {
     const docParam = z.string().optional().describe(
         "Target .dsorm document by file name, relative path, or URI. If omitted, the active designer is used. Opened automatically if it is not already open."
     );
@@ -63,7 +63,9 @@ function MakeRegDoc(pReg: RegisterTool, pBridge: IDaseAgentBridge): RegisterTool
                     return await pCb(pArgs);
                 }
                 finally {
-                    pBridge.ClearTarget();
+                    // Best-effort: nunca deixa a limpeza mascarar o resultado real.
+                    try { await pBridge.ClearTarget(); }
+                    catch { /* bridge caiu entre a chamada e a limpeza — ignora */ }
                 }
             }
         );
@@ -89,7 +91,8 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
         },
         async (pArgs) => {
             const res = await bridge.SetTargetDocument(pArgs.document as string);
-            bridge.ClearTarget();
+            try { await bridge.ClearTarget(); }
+            catch { /* best-effort */ }
             return Text(res.error ?? `Document "${res.name}" is open and ready.`);
         }
     );
@@ -101,7 +104,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "Get a summary of the currently open ORM model: schema, table count, FK count, and the list of tables.",
             inputSchema: {}
         },
-        async () => Text(bridge.GetModelInfo())
+        async () => Text(await bridge.GetModelInfo())
     );
 
     regDoc(
@@ -113,7 +116,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 filter: z.string().optional().describe("Case-insensitive substring to filter table names.")
             }
         },
-        async (pArgs) => Text(bridge.ListTables(pArgs.filter as string | undefined))
+        async (pArgs) => Text(await bridge.ListTables(pArgs.filter as string | undefined))
     );
 
     regDoc(
@@ -127,7 +130,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 isShadow: z.boolean().optional().describe("Disambiguate a duplicated name: true = shadow table, false = real table.")
             }
         },
-        async (pArgs) => Text(bridge.GetTableDetails(
+        async (pArgs) => Text(await bridge.GetTableDetails(
             pArgs.tableName as string | undefined,
             pArgs.tableId as string | undefined,
             pArgs.isShadow as boolean | undefined
@@ -143,7 +146,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 elementId: z.string().describe("The element ID (table, field, or reference).")
             }
         },
-        async (pArgs) => Text(bridge.GetProperties(pArgs.elementId as string))
+        async (pArgs) => Text(await bridge.GetProperties(pArgs.elementId as string))
     );
 
     regDoc(
@@ -153,7 +156,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "List all configured data types and the subset compatible with primary keys.",
             inputSchema: {}
         },
-        async () => Text(bridge.GetAvailableDataTypes())
+        async () => Text(await bridge.GetAvailableDataTypes())
     );
 
     regDoc(
@@ -163,7 +166,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "Run model validation and return errors and warnings.",
             inputSchema: {}
         },
-        async () => Text(bridge.ValidateModel())
+        async () => Text(await bridge.ValidateModel())
     );
 
     regDoc(
@@ -173,7 +176,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "Export the current ORM model to DBML (Database Markup Language) text.",
             inputSchema: {}
         },
-        async () => Text(bridge.ExportToDBML())
+        async () => Text(await bridge.ExportToDBML())
     );
 
     reg(
@@ -183,7 +186,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "List all open ORM designer documents (.dsorm) with their URI and which one is active.",
             inputSchema: {}
         },
-        async () => Text(bridge.ListDocuments())
+        async () => Text(await bridge.ListDocuments())
     );
 
     regDoc(
@@ -195,7 +198,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 elementId: z.string().describe("The element ID.")
             }
         },
-        async (pArgs) => Text(bridge.GetElementInfoText(pArgs.elementId as string))
+        async (pArgs) => Text(await bridge.GetElementInfoText(pArgs.elementId as string))
     );
 
     regDoc(
@@ -209,7 +212,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 isShadow: z.boolean().optional().describe("Disambiguate a duplicated name.")
             }
         },
-        async (pArgs) => Text(bridge.GetSeed(
+        async (pArgs) => Text(await bridge.GetSeed(
             pArgs.tableName as string | undefined,
             pArgs.tableId as string | undefined,
             pArgs.isShadow as boolean | undefined
@@ -226,7 +229,7 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
                 y: z.number().optional().describe("Canvas Y for the would-be shadow table (default 100).")
             }
         },
-        async (pArgs) => Text(bridge.GetShadowTableOptions(
+        async (pArgs) => Text(await bridge.GetShadowTableOptions(
             (pArgs.x as number | undefined) ?? 100,
             (pArgs.y as number | undefined) ?? 100
         ))
@@ -239,6 +242,6 @@ export function RegisterReadTools(pServer: McpServer, pHost: IDaseMcpHost): void
             description: "Get the full layout context as JSON (tables with sizes/fields, FK topology, canvas dimensions) so YOU can compute a table-organization plan and submit it via dase_apply_organization. Use this instead of dase_cmd_organize_tables_ai to organize tables entirely through MCP.",
             inputSchema: {}
         },
-        async () => Text(bridge.GetOrganizationContextText())
+        async () => Text(await bridge.GetOrganizationContextText())
     );
 }
