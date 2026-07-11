@@ -1,0 +1,18 @@
+{
+    "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+    "name": "dase-mcp",
+    "description": "DASE ORM Designer MCP plugin marketplace",
+    "owner": {
+        "name": "Hermes Silva",
+        "email": "hxpelo@gmail.com"
+    },
+    "plugins": [
+        {
+            "name": "dase-mcp",
+            "source": "./claude-plugin",
+            "description": "Connect Claude Code to a live DASE ORM Designer session in VS Code: read, edit and organize .dsorm data models through 40+ MCP tools",
+            "category": "database",
+            "homepage": "https://github.com/hermessilva/DASE-MCP"
+        }
+    ]
+}
